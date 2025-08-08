@@ -1,12 +1,6 @@
 use anyhow::{Context, Result};
-use pnet_packet::ethernet::{EthernetPacket, MutableEthernetPacket};
-use pnet_packet::ip::{IpNextHeaderProtocols};
-use pnet_packet::ipv4::{Ipv4Packet};
-use pnet_packet::tcp::TcpPacket;
-use pnet_packet::udp::UdpPacket;
-use pnet_packet::Packet;
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{Duration, Instant};
@@ -67,8 +61,8 @@ impl PacketRouter {
 
     /// Analyze incoming packet and determine optimal routing
     pub async fn route_packet(&self, packet_data: &[u8]) -> Result<RoutingDecision> {
-        // Parse the packet to understand its characteristics
-        let traffic_info = self.analyze_packet(packet_data)?;
+        // Simplified packet analysis for development
+        let traffic_info = self.analyze_packet_simple(packet_data)?;
         
         // Get current interface metrics
         let metrics = self.interface_metrics.read().await;
@@ -104,95 +98,24 @@ impl PacketRouter {
         })
     }
 
-    /// Analyze packet characteristics to determine traffic type and priority
-    fn analyze_packet(&self, packet_data: &[u8]) -> Result<TrafficInfo> {
-        // Parse Ethernet frame
-        let ethernet_packet = EthernetPacket::new(packet_data)
-            .context("Failed to parse Ethernet packet")?;
-
-        match ethernet_packet.get_ethertype() {
-            pnet_packet::ethernet::EtherTypes::Ipv4 => {
-                self.analyze_ipv4_packet(ethernet_packet.payload())
-            }
-            _ => Ok(TrafficInfo {
-                traffic_type: TrafficType::Unknown,
-                priority: 1,
-                estimated_size: packet_data.len() as u64,
-                destination: None,
-            })
-        }
-    }
-
-    fn analyze_ipv4_packet(&self, payload: &[u8]) -> Result<TrafficInfo> {
-        let ipv4_packet = Ipv4Packet::new(payload)
-            .context("Failed to parse IPv4 packet")?;
-
-        let destination = Some(ipv4_packet.get_destination());
-        let protocol = ipv4_packet.get_next_level_protocol();
-
-        let (traffic_type, priority) = match protocol {
-            IpNextHeaderProtocols::Tcp => {
-                if let Some(tcp_packet) = TcpPacket::new(ipv4_packet.payload()) {
-                    self.classify_tcp_traffic(&tcp_packet)
-                } else {
-                    (TrafficType::Web, 2)
-                }
-            }
-            IpNextHeaderProtocols::Udp => {
-                if let Some(udp_packet) = UdpPacket::new(ipv4_packet.payload()) {
-                    self.classify_udp_traffic(&udp_packet)
-                } else {
-                    (TrafficType::Unknown, 1)
-                }
-            }
-            _ => (TrafficType::Unknown, 1),
+    /// Simplified packet analysis without deep packet inspection
+    fn analyze_packet_simple(&self, packet_data: &[u8]) -> Result<TrafficInfo> {
+        // For development, we'll do basic analysis based on packet size and patterns
+        let packet_size = packet_data.len() as u64;
+        
+        let (traffic_type, priority) = match packet_size {
+            0..=64 => (TrafficType::Gaming, 4),      // Small packets often gaming/VoIP
+            65..=512 => (TrafficType::Web, 2),       // Medium packets often web traffic
+            513..=1500 => (TrafficType::Streaming, 3), // Large packets often streaming
+            _ => (TrafficType::File, 1),             // Very large packets often file transfer
         };
 
         Ok(TrafficInfo {
             traffic_type,
             priority,
-            estimated_size: ipv4_packet.get_total_length() as u64,
-            destination,
+            estimated_size: packet_size,
+            destination: None, // Would need actual packet parsing for this
         })
-    }
-
-    fn classify_tcp_traffic(&self, tcp_packet: &TcpPacket) -> (TrafficType, u8) {
-        let dest_port = tcp_packet.get_destination();
-        let src_port = tcp_packet.get_source();
-
-        match dest_port {
-            // Web traffic
-            80 | 443 | 8080 | 8443 => (TrafficType::Web, 2),
-            // Gaming ports (common ranges)
-            1024..=5000 => (TrafficType::Gaming, 4), // High priority for low latency
-            // File transfer / streaming
-            21 | 22 | 990 | 989 => (TrafficType::File, 1),
-            // Streaming services (common ports)
-            1935 | 554 => (TrafficType::Streaming, 3),
-            _ => {
-                // Check source port as well
-                match src_port {
-                    80 | 443 => (TrafficType::Web, 2),
-                    _ => (TrafficType::Unknown, 1),
-                }
-            }
-        }
-    }
-
-    fn classify_udp_traffic(&self, udp_packet: &UdpPacket) -> (TrafficType, u8) {
-        let dest_port = udp_packet.get_destination();
-        
-        match dest_port {
-            // DNS
-            53 => (TrafficType::Web, 3),
-            // Gaming (common UDP gaming ports)
-            3074 | 27015 | 7777..=7784 => (TrafficType::Gaming, 4),
-            // Streaming
-            5004 | 5005 | 1234 => (TrafficType::Streaming, 3),
-            // VoIP
-            5060 | 5061 => (TrafficType::Gaming, 4), // Treat VoIP like gaming for latency
-            _ => (TrafficType::Unknown, 1),
-        }
     }
 
     /// Round-robin interface selection
@@ -282,8 +205,8 @@ impl PacketRouter {
     }
 
     async fn get_available_interfaces(&self) -> Vec<PhysicalInterface> {
-        // For now, return all interfaces. Later, filter based on status/health
-        vec![self.interface_manager.get_primary_interface().unwrap().clone()]
+        // Return all interfaces from the interface manager
+        self.interface_manager.get_all_interfaces().clone()
     }
 
     async fn calculate_confidence(&self, interface: &PhysicalInterface, metrics: &HashMap<u32, PacketMetrics>) -> f32 {

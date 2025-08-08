@@ -1,17 +1,34 @@
 // src-tauri/src/virtual_adapter.rs
 use anyhow::{Context, Result};
-use pnet_datalink::{self, Channel, Config, DataLinkSender, DataLinkReceiver};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
-use tun::{Device, DeviceBuilder};
 
 use crate::interface_manager::InterfaceManager;
 use crate::packet_router::{PacketRouter, LoadBalancingMode};
 use crate::performance_monitor::PerformanceMonitor;
 
+// Simple TUN interface abstraction for this example
+// In a real implementation, you would use a proper TUN/TAP library
+struct TunInterface {
+    name: String,
+}
+
+impl TunInterface {
+    async fn new(name: String) -> Result<Self> {
+        // In a real implementation, this would create an actual TUN interface
+        // For now, we'll simulate it
+        println!("Creating simulated TUN interface: {}", name);
+        Ok(Self { name })
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 pub struct VirtualNetworkInterface {
-    tun_interface: Box<dyn Device>,
+    tun_interface: TunInterface,
     packet_router: Arc<PacketRouter>,
     performance_monitor: Arc<PerformanceMonitor>,
     is_running: Arc<tokio::sync::RwLock<bool>>,
@@ -22,11 +39,7 @@ impl VirtualNetworkInterface {
         println!("Creating virtual network interface...");
         
         // Create TUN interface
-        let tun = DeviceBuilder::new()
-            .name("NetBoost-TUN".to_string())
-            .tap(false) // Use TUN mode (layer 3)
-            .mtu(1500)
-            .build()
+        let tun = TunInterface::new("NetBoost-TUN".to_string())
             .await
             .context("Failed to create TUN interface")?;
 
@@ -88,7 +101,7 @@ impl VirtualNetworkInterface {
         let (packet_tx, mut packet_rx) = mpsc::channel::<Vec<u8>>(1000);
         
         // Spawn packet reader task
-        let reader_handle = self.spawn_packet_reader(packet_tx).await?;
+        let _reader_handle = self.spawn_packet_reader(packet_tx).await?;
 
         // Main packet processing task
         let handle = tokio::spawn(async move {
@@ -122,12 +135,12 @@ impl VirtualNetworkInterface {
     async fn spawn_packet_reader(&mut self, packet_tx: mpsc::Sender<Vec<u8>>) -> Result<tokio::task::JoinHandle<()>> {
         // Note: This is a simplified version. In a real implementation,
         // we'd need to handle the TUN interface reading differently
-        // since tun-rs doesn't directly support tokio async reading
+        // since most TUN libraries don't directly support tokio async reading
         
         let is_running = Arc::clone(&self.is_running);
         
         let handle = tokio::spawn(async move {
-            let mut buf = [0u8; 1504]; // MTU + some overhead
+            let _buf = [0u8; 1504]; // MTU + some overhead
             
             while *is_running.read().await {
                 // Simulate packet reading - in real implementation,

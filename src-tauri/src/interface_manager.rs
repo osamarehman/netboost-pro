@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
-use pnet_datalink::NetworkInterface;
+use anyhow::Result;
 use std::net::Ipv4Addr;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PhysicalInterface {
     pub name: String,
     pub description: String,
@@ -25,31 +24,32 @@ impl InterfaceManager {
 
     fn discover_interfaces(&mut self) -> Result<()> {
         println!("Discovering network interfaces...");
-        let all_interfaces = pnet_datalink::interfaces();
+        
+        // For now, create mock interfaces for development
+        // In a production version, you would use platform-specific APIs
+        // or a simpler networking crate that doesn't require WinPcap/Npcap
+        
+        self.interfaces = vec![
+            PhysicalInterface {
+                name: "Ethernet".to_string(),
+                description: "Primary Ethernet Interface".to_string(),
+                ip_address: Ipv4Addr::new(192, 168, 1, 100),
+                index: 1,
+            },
+            PhysicalInterface {
+                name: "WiFi".to_string(),
+                description: "Wireless Network Interface".to_string(),
+                ip_address: Ipv4Addr::new(192, 168, 1, 101),
+                index: 2,
+            },
+        ];
 
-        self.interfaces = all_interfaces
-            .into_iter()
-            .filter_map(|iface: NetworkInterface| {
-                if iface.is_up() && !iface.is_loopback() {
-                    iface.ips.iter().find(|ip| ip.is_ipv4()).map(|ip| {
-                        let ip_addr = match ip.ip() {
-                            std::net::IpAddr::V4(ipv4) => ipv4,
-                            _ => unreachable!(),
-                        };
-                        Some(PhysicalInterface {
-                            name: iface.name.clone(),
-                            description: iface.description.clone(),
-                            ip_address: ip_addr,
-                            index: iface.index,
-                        })
-                    }).flatten()
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        println!("Found {} suitable interfaces:", self.interfaces.len());
+        // TODO: Replace with actual interface discovery
+        // On Windows: Use WMI queries or Windows API
+        // On Linux: Parse /proc/net/dev or use netlink
+        // On macOS: Use system APIs
+        
+        println!("Found {} interfaces:", self.interfaces.len());
         for iface in &self.interfaces {
             println!("  - {}: {} (index {})", iface.name, iface.ip_address, iface.index);
         }
@@ -60,4 +60,25 @@ impl InterfaceManager {
     pub fn get_primary_interface(&self) -> Option<&PhysicalInterface> {
         self.interfaces.first()
     }
+
+    pub fn get_all_interfaces(&self) -> &Vec<PhysicalInterface> {
+        &self.interfaces
+    }
+}
+
+// Future implementation ideas for real interface discovery:
+#[cfg(windows)]
+mod windows_impl {
+    // Use Windows API directly:
+    // - GetAdaptersAddresses
+    // - WMI queries
+    // - ipconfig parsing
+}
+
+#[cfg(unix)]
+mod unix_impl {
+    // Use Unix-specific methods:
+    // - Parse /proc/net/dev (Linux)
+    // - Use getifaddrs (macOS/BSD)
+    // - Parse ip route show (Linux)
 }

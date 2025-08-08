@@ -4,12 +4,15 @@ mod packet_router;
 mod performance_monitor;
 pub mod interface_manager;
 
+// Re-export commonly used types for easier access
+pub use interface_manager::{InterfaceManager, PhysicalInterface};
+pub use packet_router::LoadBalancingMode;
+pub use performance_monitor::PerformanceStats;
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use virtual_adapter::VirtualNetworkInterface;
-use packet_router::LoadBalancingMode;
-use performance_monitor::{PerformanceStats};
-use interface_manager::{InterfaceManager, PhysicalInterface};
+use tauri::Manager;
 
 // Global state for the application
 pub struct AppState {
@@ -130,7 +133,7 @@ async fn get_network_interfaces() -> Result<Vec<PhysicalInterface>, String> {
     match InterfaceManager::new() {
         Ok(manager) => {
             // Return all discovered interfaces
-            Ok(vec![manager.get_primary_interface().unwrap().clone()])
+            Ok(manager.get_all_interfaces().clone())
         }
         Err(e) => Err(format!("Failed to discover interfaces: {}", e)),
     }
@@ -171,7 +174,7 @@ async fn get_system_info() -> Result<SystemInfo, String> {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        build_date: env!("BUILD_DATE").unwrap_or("unknown").to_string(),
+        build_date: std::env::var("BUILD_DATE").unwrap_or_else(|_| "unknown".to_string()),
     })
 }
 
@@ -235,6 +238,7 @@ pub fn run() {
 
 #[cfg(not(feature = "gui"))]
 pub fn run() {
-    eprintln!("GUI feature not enabled. Use the CLI instead.");
-    std::process::exit(1);
+    println!("NetBoost Pro - CLI Mode");
+    println!("GUI feature not enabled. Use the CLI binary instead.");
+    println!("Run with: cargo run --bin cli -- --help");
 }
