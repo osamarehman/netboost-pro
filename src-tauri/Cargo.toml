@@ -35,4 +35,5 @@ net-route = "0.2.0"
 # GUI specific dependencies
 tauri = { version = "2", features = [], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
+env_logger = "0.11.8"
 

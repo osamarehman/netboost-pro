@@ -1,2 +1,86 @@
-[env]
-LIBCLANG_PATH = "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\Llvm\\x64\\bin"
+[package]
+name = "netboost-pro"
+version = "0.1.0"
+description = "NetBoost Pro - Intelligent Network Optimization"
+authors = ["NetBoost Team"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "netboost_pro_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[bin]
+name = "netboost-cli"
+path = "src/bin/cli.rs"
+required-features = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["gui"]
+gui = ["tauri", "tauri-plugin-opener", "env_logger"]
+
+[dependencies]
+# Core dependencies
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.47.1", features = ["full"] }
+anyhow = "1.0.98"
+
+# Networking dependencies
+tun = { package = "tun-rs", version = "2.5.7", features = ["async_tokio"] }
+pnet_datalink = "0.34.0"
+pnet_packet = "0.34.0"
+net-route = "0.2.0"
+
+# CLI dependencies
+clap = { version = "4.5.4", features = ["derive"] }
+
+# GUI specific dependencies (optional)
+tauri = { version = "2", features = ["macos-private-api"], optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+env_logger = { version = "0.11", optional = true }
+
+# Additional dependencies for enhanced functionality
+# Note: Some of these might need to be added based on your specific Windows version
+# windows = { version = "0.58", features = [
+#     "Win32_Foundation",
+#     "Win32_System_Threading",
+#     "Win32_NetworkManagement_IpHelper",
+#     "Win32_NetworkManagement_Ndis",
+# ], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+# Windows-specific dependencies would go here
+# winapi = { version = "0.3", features = ["wininet", "iphlpapi"] }
+
+[target.'cfg(unix)'.dependencies]
+# Unix-specific dependencies would go here
+# libc = "0.2"
+
+[profile.dev]
+# Development profile for faster compile times
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked"
+
+[profile.release]
+# Release profile for optimal performance
+opt-level = 3
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-with-debug]
+# Release with debug info for profiling
+inherits = "release"
+debug = true
+strip = false
