@@ -1,11 +1,14 @@
 mod virtual_adapter;
+pub mod interface_manager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[cfg(feature = "gui")]
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
         tauri::Builder::default()
