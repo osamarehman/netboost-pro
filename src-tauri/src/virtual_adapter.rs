@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tun_rs::{Device, DeviceBuilder};
+use tun::{Device, DeviceBuilder};
 
 pub struct VirtualNetworkInterface {
     tun_interface: Box<dyn Device>,
