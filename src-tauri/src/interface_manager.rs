@@ -10,7 +10,7 @@ pub struct PhysicalInterface {
 }
 
 pub struct InterfaceManager {
-    interfaces: Vec<PhysicalInterface>,
+    pub interfaces: Vec<PhysicalInterface>,
 }
 
 impl InterfaceManager {
@@ -25,30 +25,25 @@ impl InterfaceManager {
     fn discover_interfaces(&mut self) -> Result<()> {
         println!("Discovering network interfaces...");
         
-        // For now, create mock interfaces for development
-        // In a production version, you would use platform-specific APIs
-        // or a simpler networking crate that doesn't require WinPcap/Npcap
-        
-        self.interfaces = vec![
-            PhysicalInterface {
-                name: "Ethernet".to_string(),
-                description: "Primary Ethernet Interface".to_string(),
-                ip_address: Ipv4Addr::new(192, 168, 1, 100),
-                index: 1,
-            },
-            PhysicalInterface {
-                name: "WiFi".to_string(),
-                description: "Wireless Network Interface".to_string(),
-                ip_address: Ipv4Addr::new(192, 168, 1, 101),
-                index: 2,
-            },
-        ];
+        self.interfaces = pnet_datalink::interfaces()
+            .into_iter()
+            .filter(|iface| iface.is_up() && !iface.is_loopback() && !iface.ips.is_empty())
+            .filter_map(|iface| {
+                iface.ips.iter().find(|ip| ip.is_ipv4()).map(|ip| {
+                    let ip_addr = match ip.ip() {
+                        std::net::IpAddr::V4(ipv4) => ipv4,
+                        _ => return None, // Should not happen due to filter
+                    };
+                    Some(PhysicalInterface {
+                        name: iface.name.clone(),
+                        description: iface.description.clone(),
+                        ip_address: ip_addr,
+                        index: iface.index,
+                    })
+                }).flatten()
+            })
+            .collect();
 
-        // TODO: Replace with actual interface discovery
-        // On Windows: Use WMI queries or Windows API
-        // On Linux: Parse /proc/net/dev or use netlink
-        // On macOS: Use system APIs
-        
         println!("Found {} interfaces:", self.interfaces.len());
         for iface in &self.interfaces {
             println!("  - {}: {} (index {})", iface.name, iface.ip_address, iface.index);

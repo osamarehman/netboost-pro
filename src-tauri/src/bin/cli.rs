@@ -1,6 +1,6 @@
 // src/bin/cli.rs
 use clap::Parser;
-use netboost_pro_lib::{InterfaceManager, PhysicalInterface};
+use netboost_pro_lib::InterfaceManager;
 
 /// NetBoost Pro Command-Line Interface
 #[derive(Parser, Debug)]
