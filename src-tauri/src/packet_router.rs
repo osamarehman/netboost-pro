@@ -8,6 +8,7 @@ use tokio::time::{Duration, Instant};
 use crate::interface_manager::{PhysicalInterface, InterfaceManager};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PacketMetrics {
     pub latency: Duration,
     pub bandwidth_usage: u64,
@@ -24,6 +25,7 @@ pub struct RoutingDecision {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum TrafficType {
     Gaming,      // Low latency priority
     Streaming,   // High bandwidth priority  
@@ -40,6 +42,7 @@ pub enum LoadBalancingMode {
     Balanced,
 }
 
+#[allow(dead_code)]
 pub struct PacketRouter {
     interface_manager: Arc<InterfaceManager>,
     interface_metrics: Arc<RwLock<HashMap<u32, PacketMetrics>>>,
@@ -238,6 +241,7 @@ impl PacketRouter {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct TrafficInfo {
     traffic_type: TrafficType,
     priority: u8,
@@ -248,16 +252,64 @@ struct TrafficInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
+
+    fn create_mock_interfaces() -> Vec<PhysicalInterface> {
+        vec![
+            PhysicalInterface {
+                name: "eth0".to_string(),
+                description: "Mock Ethernet".to_string(),
+                ip_address: Ipv4Addr::new(192, 168, 1, 1),
+                index: 1,
+            },
+            PhysicalInterface {
+                name: "wifi0".to_string(),
+                description: "Mock WiFi".to_string(),
+                ip_address: Ipv4Addr::new(192, 168, 1, 2),
+                index: 2,
+            },
+        ]
+    }
 
     #[tokio::test]
     async fn test_round_robin_selection() {
-        // Test implementation for round-robin selection
-        // This would require setting up mock interfaces
+        let im = InterfaceManager{ interfaces: create_mock_interfaces() };
+
+        let mut router = PacketRouter::new(im);
+        router.set_load_balancing_mode(LoadBalancingMode::RoundRobin);
+
+        let packet = vec![0u8; 100];
+
+        let decision1 = router.route_packet(&packet).await.unwrap();
+        assert_eq!(decision1.interface_index, 1);
+
+        let decision2 = router.route_packet(&packet).await.unwrap();
+        assert_eq!(decision2.interface_index, 2);
+
+        let decision3 = router.route_packet(&packet).await.unwrap();
+        assert_eq!(decision3.interface_index, 1);
     }
 
     #[tokio::test]
     async fn test_packet_classification() {
-        // Test packet classification logic
-        // This would require creating test packet data
+        let im = InterfaceManager{ interfaces: create_mock_interfaces() };
+        let router = PacketRouter::new(im);
+
+        let gaming_packet = vec![0u8; 60];
+        let web_packet = vec![0u8; 300];
+        let streaming_packet = vec![0u8; 1000];
+        let file_packet = vec![0u8; 2000];
+
+        let gaming_info = router.analyze_packet_simple(&gaming_packet).unwrap();
+        assert!(matches!(gaming_info.traffic_type, TrafficType::Gaming));
+
+        let web_info = router.analyze_packet_simple(&web_packet).unwrap();
+        assert!(matches!(web_info.traffic_type, TrafficType::Web));
+
+        let streaming_info = router.analyze_packet_simple(&streaming_packet).unwrap();
+        assert!(matches!(streaming_info.traffic_type, TrafficType::Streaming));
+
+        let file_info = router.analyze_packet_simple(&file_packet).unwrap();
+        assert!(matches!(file_info.traffic_type, TrafficType::File));
     }
 }

@@ -1,35 +1,44 @@
 // src-tauri/src/virtual_adapter.rs
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::{Duration, interval};
 
 use crate::interface_manager::InterfaceManager;
 use crate::packet_router::{PacketRouter, LoadBalancingMode};
 use crate::performance_monitor::PerformanceMonitor;
+use pnet_datalink::{self, Channel};
+use std::net::Ipv4Addr;
 
-// Simple TUN interface abstraction for this example
-// In a real implementation, you would use a proper TUN/TAP library
+use tun::{DeviceBuilder, AsyncDevice};
+
 struct TunInterface {
-    name: String,
+    device: Arc<AsyncDevice>,
 }
 
 impl TunInterface {
-    async fn new(name: String) -> Result<Self> {
-        // In a real implementation, this would create an actual TUN interface
-        // For now, we'll simulate it
-        println!("Creating simulated TUN interface: {}", name);
-        Ok(Self { name })
+    async fn new(name: &str) -> Result<Self> {
+        let address: Ipv4Addr = "10.0.0.1".parse()?;
+        let dev = DeviceBuilder::new()
+            .name(name.to_string())
+            .ipv4(address, 24, None)
+            .build_async()?;
+
+        println!("Created TUN interface: {}", dev.name()?);
+
+        Ok(Self {
+            device: Arc::new(dev),
+        })
     }
 
-    fn name(&self) -> &str {
-        &self.name
+    fn name(&self) -> Result<String> {
+        self.device.name().map_err(anyhow::Error::from)
     }
 }
 
 pub struct VirtualNetworkInterface {
     tun_interface: TunInterface,
-    packet_router: Arc<PacketRouter>,
+    packet_router: Arc<RwLock<PacketRouter>>,
     performance_monitor: Arc<PerformanceMonitor>,
     is_running: Arc<tokio::sync::RwLock<bool>>,
 }
@@ -39,18 +48,18 @@ impl VirtualNetworkInterface {
         println!("Creating virtual network interface...");
         
         // Create TUN interface
-        let tun = TunInterface::new("NetBoost-TUN".to_string())
+        let tun = TunInterface::new("NetBoost-TUN")
             .await
             .context("Failed to create TUN interface")?;
 
-        println!("Virtual network interface '{}' created.", tun.name());
+        println!("Virtual network interface '{}' created.", tun.name()?);
 
         // Initialize interface manager
         let interface_manager = InterfaceManager::new()
             .context("Failed to initialize interface manager")?;
 
         // Create packet router
-        let packet_router = Arc::new(PacketRouter::new(interface_manager));
+        let packet_router = Arc::new(RwLock::new(PacketRouter::new(interface_manager)));
 
         // Create performance monitor
         let performance_monitor = Arc::new(PerformanceMonitor::new());
@@ -133,26 +142,24 @@ impl VirtualNetworkInterface {
     }
 
     async fn spawn_packet_reader(&mut self, packet_tx: mpsc::Sender<Vec<u8>>) -> Result<tokio::task::JoinHandle<()>> {
-        // Note: This is a simplified version. In a real implementation,
-        // we'd need to handle the TUN interface reading differently
-        // since most TUN libraries don't directly support tokio async reading
-        
         let is_running = Arc::clone(&self.is_running);
+        let device: Arc<AsyncDevice> = Arc::clone(&self.tun_interface.device);
         
         let handle = tokio::spawn(async move {
-            let _buf = [0u8; 1504]; // MTU + some overhead
+            let mut buf = [0u8; 1504]; // MTU + some overhead
             
             while *is_running.read().await {
-                // Simulate packet reading - in real implementation,
-                // this would read from the TUN interface
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                
-                // For now, just create a dummy packet to test the pipeline
-                let dummy_packet = vec![0u8; 60]; // Minimum Ethernet frame size
-                
-                if packet_tx.send(dummy_packet).await.is_err() {
-                    println!("Packet receiver dropped");
-                    break;
+                match device.recv(&mut buf).await {
+                    Ok(len) => {
+                        if packet_tx.send(buf[..len].to_vec()).await.is_err() {
+                            println!("Packet receiver dropped");
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading from TUN device: {}", e);
+                        break;
+                    }
                 }
             }
         });
@@ -162,7 +169,7 @@ impl VirtualNetworkInterface {
 
     async fn process_packet(
         packet_data: Vec<u8>,
-        packet_router: &PacketRouter,
+        packet_router: &Arc<RwLock<PacketRouter>>,
         performance_monitor: &PerformanceMonitor,
     ) -> Result<()> {
         let start_time = std::time::Instant::now();
@@ -171,7 +178,7 @@ impl VirtualNetworkInterface {
         performance_monitor.record_packet_received(packet_data.len()).await;
 
         // Route the packet
-        match packet_router.route_packet(&packet_data).await {
+        match packet_router.read().await.route_packet(&packet_data).await {
             Ok(routing_decision) => {
                 println!(
                     "Routing packet to interface '{}' (confidence: {:.2}%): {}",
@@ -205,30 +212,28 @@ impl VirtualNetworkInterface {
         packet_data: &[u8],
         routing_decision: &crate::packet_router::RoutingDecision,
     ) -> Result<()> {
-        // This is where we would actually send the packet to the physical interface
-        // For now, we'll just simulate it
-        
-        println!(
-            "Sending {} bytes to interface {} (index: {})",
-            packet_data.len(),
-            routing_decision.interface_name,
-            routing_decision.interface_index
-        );
+        let interfaces = pnet_datalink::interfaces();
+        let interface = interfaces
+            .into_iter()
+            .find(|iface| iface.index == routing_decision.interface_index)
+            .context("Failed to find the selected interface")?;
 
-        // In a real implementation, this would:
-        // 1. Create a raw socket or use pnet_datalink
-        // 2. Send the packet through the selected physical interface
-        // 3. Handle any errors or retries
+        let (mut tx, _) = match pnet_datalink::channel(&interface, Default::default()) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => return Err(anyhow::anyhow!("Unsupported channel type")),
+            Err(e) => return Err(e.into()),
+        };
 
-        // Simulate network delay
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        tx.send_to(packet_data, None)
+            .context("Failed to send packet")?
+            .context("Failed to send packet")?;
 
         Ok(())
     }
 
     async fn start_performance_monitoring(&self) -> tokio::task::JoinHandle<()> {
         let performance_monitor = Arc::clone(&self.performance_monitor);
-        let packet_router = Arc::clone(&self.packet_router);
+        let packet_router: Arc<RwLock<PacketRouter>> = Arc::clone(&self.packet_router);
         let is_running = Arc::clone(&self.is_running);
 
         tokio::spawn(async move {
@@ -242,7 +247,7 @@ impl VirtualNetworkInterface {
                 
                 // For now, simulate metrics updates
                 // In real implementation, this would ping interfaces and measure actual performance
-                packet_router.update_interface_metrics(
+                packet_router.write().await.update_interface_metrics(
                     1, // interface index
                     Duration::from_millis(20), // simulated latency
                     stats.bandwidth_usage,
@@ -264,8 +269,7 @@ impl VirtualNetworkInterface {
 
     /// Configure load balancing mode
     pub async fn set_load_balancing_mode(&mut self, mode: LoadBalancingMode) {
-        // Create a new packet router with the updated mode
-        // This is a simplified approach - in practice, you'd want to update the existing router
+        self.packet_router.write().await.set_load_balancing_mode(mode);
         println!("Load balancing mode changed to: {:?}", mode);
     }
 
@@ -278,6 +282,10 @@ impl VirtualNetworkInterface {
     pub async fn stop(&self) {
         println!("Stopping virtual network interface...");
         *self.is_running.write().await = false;
+    }
+
+    pub fn name(&self) -> Result<String> {
+        self.tun_interface.name()
     }
 }
 

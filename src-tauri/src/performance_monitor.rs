@@ -112,6 +112,7 @@ impl PerformanceMonitor {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reset_stats(&self) {
         let mut stats = self.stats.write().await;
         *stats = InternalStats {

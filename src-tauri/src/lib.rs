@@ -99,15 +99,22 @@ async fn stop_netboost(state: tauri::State<'_, AppState>) -> Result<String, Stri
 #[tauri::command]
 async fn get_service_status(state: tauri::State<'_, AppState>) -> Result<ServiceStatus, String> {
     let is_running = *state.is_running.read().await;
+
+    let (uptime_seconds, virtual_interface_name) = if is_running {
+        if let Some(vni) = state.virtual_interface.read().await.as_ref() {
+            let stats = vni.get_performance_stats().await;
+            (Some(stats.uptime.as_secs()), vni.name().ok())
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
     
     Ok(ServiceStatus {
         is_running,
-        uptime_seconds: if is_running { Some(3600) } else { None }, // Placeholder
-        virtual_interface_name: if is_running { 
-            Some("NetBoost-TUN".to_string()) 
-        } else { 
-            None 
-        },
+        uptime_seconds,
+        virtual_interface_name,
     })
 }
 
@@ -231,10 +238,30 @@ pub fn run() {
             get_performance_stats,
             get_network_interfaces,
             set_load_balancing_mode,
-            get_system_info
+            get_system_info,
+            set_connection_aggregation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(feature = "gui")]
+#[tauri::command]
+async fn set_connection_aggregation(enabled: bool, state: tauri::State<'_, AppState>) -> Result<String, String> {
+    if !*state.is_running.read().await {
+        return Err("NetBoost Pro is not running".to_string());
+    }
+
+    // In the future, this would enable/disable the aggregation logic
+    // For now, it's just a placeholder
+
+    let message = if enabled {
+        "Connection aggregation enabled"
+    } else {
+        "Connection aggregation disabled"
+    };
+
+    Ok(message.to_string())
 }
 
 #[cfg(not(feature = "gui"))]

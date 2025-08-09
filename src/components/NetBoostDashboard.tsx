@@ -41,6 +41,7 @@ const NetBoostDashboard: React.FC = () => {
   const [interfaces, setInterfaces] = useState<PhysicalInterface[]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [loadBalancingMode, setLoadBalancingMode] = useState<string>('balanced');
+  const [isAggregationEnabled, setIsAggregationEnabled] = useState<boolean>(true);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState<string>('');
@@ -244,10 +245,16 @@ const NetBoostDashboard: React.FC = () => {
                 </button>
               </div>
 
-              {serviceStatus.is_running && serviceStatus.virtual_interface_name && (
+              {serviceStatus.is_running && (
                 <div className="mt-4 p-3 bg-slate-700/50 rounded-lg">
-                  <div className="text-sm text-slate-400">Virtual Interface</div>
-                  <div className="font-mono text-blue-400">{serviceStatus.virtual_interface_name}</div>
+                  <div className="text-sm text-slate-400">Uptime</div>
+                  <div className="font-mono text-green-400">{formatUptime(serviceStatus.uptime_seconds || 0)}</div>
+                  {serviceStatus.virtual_interface_name && (
+                    <>
+                      <div className="text-sm text-slate-400 mt-2">Virtual Interface</div>
+                      <div className="font-mono text-blue-400">{serviceStatus.virtual_interface_name}</div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -266,6 +273,33 @@ const NetBoostDashboard: React.FC = () => {
               <option value="latency_based">Latency Based</option>
               <option value="bandwidth_based">Bandwidth Based</option>
             </select>
+          </div>
+        </div>
+
+        {/* Connection Aggregation Control */}
+        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-8">
+          <h2 className="text-2xl font-semibold mb-4">Connection Aggregation</h2>
+          <div className="flex items-center space-x-4">
+            <p className="text-slate-400">Enable or disable connection aggregation.</p>
+            <button
+              onClick={() => {
+                // This is a placeholder for now
+                const new_state = !isAggregationEnabled;
+                invoke('set_connection_aggregation', { enabled: new_state })
+                  .then(() => {
+                    setIsAggregationEnabled(new_state);
+                    setSuccess(`Connection aggregation ${new_state ? 'enabled' : 'disabled'}`);
+                  })
+                  .catch(err => setError(String(err)));
+              }}
+              className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                isAggregationEnabled
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              {isAggregationEnabled ? 'Enabled' : 'Disabled'}
+            </button>
           </div>
         </div>
 
@@ -306,32 +340,36 @@ const NetBoostDashboard: React.FC = () => {
         )}
 
         {/* Network Interfaces */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-            <h3 className="text-xl font-semibold mb-4">Network Interfaces</h3>
-            <div className="space-y-3">
-              {interfaces.map((iface) => (
-                <div key={iface.index} className="p-4 bg-slate-700/50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-blue-400">{iface.name}</div>
-                      <div className="text-sm text-slate-400">{iface.description}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono text-sm">{iface.ip_address}</div>
-                      <div className="text-xs text-slate-500">Index: {iface.index}</div>
-                    </div>
+        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
+          <h3 className="text-xl font-semibold mb-4">Network Interfaces</h3>
+          <div className="space-y-3">
+            {interfaces.map((iface) => (
+              <div key={iface.index} className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-blue-400">{iface.name}</div>
+                    <div className="text-sm text-slate-400">{iface.description}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono text-sm">{iface.ip_address}</div>
+                    <div className="text-xs text-slate-500">Index: {iface.index}</div>
                   </div>
                 </div>
-              ))}
-              {interfaces.length === 0 && (
-                <div className="text-slate-400 text-center py-4">
-                  No network interfaces detected
+                {/* Placeholder for per-interface stats */}
+                <div className="mt-2 pt-2 border-t border-slate-600/50 text-xs text-slate-400">
+                  Stats: (coming soon)
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
+            {interfaces.length === 0 && (
+              <div className="text-slate-400 text-center py-4">
+                No network interfaces detected
+              </div>
+            )}
           </div>
+        </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
             <h3 className="text-xl font-semibold mb-4">System Information</h3>
             {performanceStats && (
