@@ -20,9 +20,10 @@ tauri-build = { version = "2", features = [] }
 
 [features]
 default = ["gui"]
-gui = ["tauri", "tauri-plugin-opener"]
+gui = ["tauri", "tauri-plugin-opener", "tauri-plugin-http"]
 
 [dependencies]
+tauri-plugin-http = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tun = { package = "tun-rs", version = "2.5.7", features = ["async_tokio"] }
